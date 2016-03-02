@@ -1,5 +1,4 @@
-segment_name_0:wiki	1985
-segment_len_0:4	1985
-segments:2	1935
-segment_ext_1:jpg	144
-segment_substr[0-9]_1:1	102
+segment_name_1:wiki	1981
+segment_len_1:4	1981
+segments:3	1936
+segment_ext_2:jpg	145
