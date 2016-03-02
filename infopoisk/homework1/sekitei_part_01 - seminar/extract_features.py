@@ -4,6 +4,9 @@ import random
 from operator import itemgetter
 import urlparse
 import numpy as np
+from urlparse import unquote
+from collections import Counter
+
 
 def extract_features(INPUT_FILE_1, INPUT_FILE_2, OUTPUT_FILE):
 	f_in1 = open(INPUT_FILE_1, "r")
@@ -14,74 +17,59 @@ def extract_features(INPUT_FILE_1, INPUT_FILE_2, OUTPUT_FILE):
 	result_url_list = []
 
 	for num, link in enumerate(f_in1):
-		link = link.strip("\n")
-		link = link.strip("/")
-		link_arr = urlparse.urlparse(link).path.split("/")[1:len(link)]
+		link = link.strip()
+		link_arr = urlparse.urlparse(unquote(link))
 		url_list1.append(link_arr)
 		
 	for num, link in enumerate(f_in2):
-		link = link.strip("\n")
-		link = link.strip("/")
-		link_arr = urlparse.urlparse(link).path.split("/")[1:len(link)]
+		link = link.strip()
+		link_arr = urlparse.urlparse(unquote(link))
 		url_list2.append(link_arr)
 
-	url_list1 = np.asarray(url_list1)
-	url_list2 = np.asarray(url_list2)
-	np.random.shuffle(url_list1)
-	np.random.shuffle(url_list2)
-	result_url_list = np.concatenate((url_list1[0:1000], url_list2[0:1000]), axis = 0)
+	result_url_list = random.sample(url_list1, 1000) + random.sample(url_list2, 1000)
 
-	segments = {}
-	len_segments = {}
-	match_with_string = {}
-	consist_of_numbers = {}
-	str_num_str = {}
-	expansion = {}
-	expansion_and_str_num_str = {}
-	param_name = {}
-	param = {}
+	features_dict = Counter()
+	substr = re.compile("{0}+\d+{0}+$".format('\D'))
+	sub_ext = re.compile("{0}+\d+{0}+\..+$".format('\D'))
+	ext = re.compile(".+\..+$")
 
-
-	substr1 = re.compile(r'^[a-zA-Z]+[0-9]+[a-zA-Z]*$')
-	substr2 = re.compile(r'^[a-zA-Z]*[0-9]+[a-zA-Z]+$')
 
 	for i in range(len(result_url_list)):
-		segments.update({"segments:" + str(len(result_url_list[i])): segments.get("segments:" + str(len(result_url_list[i])), 0) + 1})
+		arr = result_url_list[i][2].split('/')
+		arr = filter(None, arr)
+		features_dict["segments:" + str(len(arr))] += 1
 
-		for j in range(len(result_url_list[i])):
-			d = urlparse.parse_qs(urlparse.urlparse(result_url_list[i][j]).query)
-			for key in d:
-				param_name.update({"param_name:" + key: param_name.get("param_name:" + key, 0) + 1})
-				param.update({"param:" + key + "=" + str(d[key]) : param.get("param:" + key + "=" + str(d[key]), 0) + 1})
+		d = urlparse.parse_qs(result_url_list[i][4])
+		for key in d:
+			features_dict["param_name:" + key] += 1
+			features_dict["param:" + key + "=" + str(d[key])] += 1
 
-			match_with_string.update({"segment_name_" + str(j) + ":" + str(result_url_list[i][j]): match_with_string.get("segment_name_" + str(j) + ":" + str(result_url_list[i][j]), 0) + 1})
+		for j in range(len(arr)):
 
-			if (result_url_list[i][j].isdigit()):
-				consist_of_numbers.update({"segment_[0-9]_" + str(j) + ":1": consist_of_numbers.get("segment_[0-9]_" + str(j) + ":1", 0) + 1})
+			features_dict["segment_name_" + str(j) + ":" + str(arr[j])] += 1
+			features_dict["segment_len_" + str(j) +  ":" + str(len(arr[j]))] += 1
 
-			if (len(substr1.findall(result_url_list[i][j])) + len(substr2.findall(result_url_list[i][j])) > 0):
-				str_num_str.update({"segment_substr[0-9]_" + str(j) + ":1": str_num_str.get("segment_substr[0-9]_" + str(j) + ":1", 0) + 1})
+			if (arr[j].isdigit()):
+				features_dict["segment_[0-9]_" + str(j) + ":1"] += 1
 
-			s = result_url_list[i][j].rsplit('.', 1)
-			if (len(s) > 1 and len(s[1]) != 0):
-				if ((len(substr1.findall(s[0])) + len(substr2.findall(s[0])) > 0)):
-					expansion_and_str_num_str.update({"segment_ext_substr[0-9]_" + str(j) + ":" + s[1]: expansion_and_str_num_str.get("segment_ext_substr[0-9]_" + str(j) + ":" + s[1], 0) + 1})
-				expansion.update({"segment_ext_" + str(j) + ":" + s[1]: expansion.get("segment_ext_" + str(j) + ":" + s[1], 0) + 1})
-		
-			len_segments.update({"segment_len_" + str(j) +  ":" + str(len(result_url_list[i][j])): len_segments.get("segment_len_" + str(j) +  ":" + str(len(result_url_list[i][j])), 0) + 1})
+			if (re.match(substr, arr[j]) is not None):
+				features_dict["segment_substr[0-9]_" + str(j) + ":1"] += 1
+			
+			if (re.match(ext, arr[j]) is not None):
+				features_dict["segment_ext_" + str(j) + ":" + arr[j][arr[j].rfind('.') + 1:]] += 1
+			
+			if (re.match(sub_ext, arr[j]) is not None):
+				features_dict["segment_ext_substr[0-9]_" + str(j) + ":" + arr[j][arr[j].rfind('.') + 1:]] += 1
 
 	result_features_list = []
-	result_dicts = [segments, len_segments, match_with_string, consist_of_numbers, str_num_str, expansion, expansion_and_str_num_str, param_name, param]
-	for i in range(len(result_dicts)):
-		for key in result_dicts[i]:
-			result_features_list.append([result_dicts[i][key], key])
+
+	for key in features_dict:
+		if (features_dict[key] < 100):
+			continue
+		result_features_list.append([features_dict[key], key])
 
 	result_features_list = sorted(result_features_list, reverse = True)
-	result_list = filter(lambda x: x[0] > 100, result_features_list)
-	for i in range(len(result_list)):
-		f_out.write(str(result_list[i][1]) + "\t" + str(result_list[i][0]) + "\n")
+	for i in range(len(result_features_list)):
+		f_out.write(str(result_features_list[i][1]) + "\t" + str(result_features_list[i][0]) + "\n")
 
-
-
-#extract_features("data/urls.lenta.examined", "data/urls.lenta.general", "output.txt")
 
