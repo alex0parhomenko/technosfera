@@ -36,7 +36,7 @@ def extract_features(INPUT_FILE_1, INPUT_FILE_2, OUTPUT_FILE):
 
 	for i in range(len(result_url_list)):
 		arr = result_url_list[i][2].split('/')
-		#arr = filter(None, arr)
+		arr = filter(None, arr)
 		features_dict["segments:" + str(len(arr))] += 1
 
 		d = urlparse.parse_qs(result_url_list[i][4])
@@ -45,9 +45,6 @@ def extract_features(INPUT_FILE_1, INPUT_FILE_2, OUTPUT_FILE):
 			features_dict["param:" + key + "=" + str(d[key])] += 1
 
 		for j in range(len(arr)):
-			if (len(arr[j]) == 0):
-				continue
-				
 			features_dict["segment_name_" + str(j) + ":" + str(arr[j])] += 1
 			features_dict["segment_len_" + str(j) +  ":" + str(len(arr[j]))] += 1
 
