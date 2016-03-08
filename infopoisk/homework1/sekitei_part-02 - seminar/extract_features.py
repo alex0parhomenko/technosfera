@@ -49,7 +49,7 @@ def extract_features(url_list, OUTPUT_FILE):
 	result_features_list = []
 
 	for key in features_dict:
-		if (features_dict[key] < 50):
+		if (features_dict[key] < 40):
 			continue
 		result_features_list.append([features_dict[key], key])
 
