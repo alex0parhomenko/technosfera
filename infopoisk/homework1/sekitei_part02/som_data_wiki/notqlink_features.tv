@@ -1,0 +1,17 @@
+$TYPE template
+$XDIM 2
+$YDIM 500
+$VEC_DIM 13
+0 segment_ext_1:jpg
+1 segment_len_0:4
+2 segment_len_1:10
+3 segment_len_1:12
+4 segment_len_1:16
+5 segment_len_1:17
+6 segment_len_1:18
+7 segment_len_1:21
+8 segment_len_1:26
+9 segment_len_1:27
+10 segment_len_1:29
+11 segment_len_1:31
+12 segment_substr[0-9]_1:1

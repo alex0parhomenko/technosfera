@@ -1,0 +1,8 @@
+$TYPE template
+$XDIM 2
+$YDIM 1000
+$VEC_DIM 4
+0 segment_ext_1:jpg
+1 segment_len_0:4
+2 segment_name_0:wiki
+3 segments:2

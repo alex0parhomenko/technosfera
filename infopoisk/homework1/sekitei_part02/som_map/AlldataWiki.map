@@ -1,0 +1,37 @@
+$TYPE som
+$GRID_TOPOLOGY planar
+$GRID_LAYOUT rectangular
+$XDIM 12
+$YDIM 8
+$ZDIM 1
+$VEC_DIM 13
+$STORAGE_DATE 3/9/16 2:44 PM
+$TRAINING_TIME 
+$LEARNRATE_TYPE exponential
+$LEARNRATE_INIT 0.75
+$NEIGHBORHOOD_TYPE exponential
+$NEIGHBORHOOD_INIT 6.0
+$RAND_INIT 17
+$ITERATIONS_TOTAL 2000
+$NR_TRAINVEC_TOTAL 1000
+$ADAPTIVE_COORDINATES_THRESHOLD 
+$VEC_NORMALIZED false
+$QUANTERROR_MAP 10.942060636669657
+$QUANTERROR_VEC 0.010942060636669658
+$URL_TRAINING_VEC /home/alex/technosfera/infopoisk/homework1/sekitei_part02/som_data_wiki/data.tfxidf
+$URL_TRAINING_VEC_DESCR 
+$URL_WEIGHT_VEC /home/alex/technosfera/infopoisk/homework1/sekitei_part02/som_map/AlldataWiki.wgt
+$URL_QUANTERR_MAP 
+$URL_MAPPED_INPUT_VEC 
+$URL_MAPPED_INPUT_VEC_DESCR 
+$URL_UNIT_DESCR /home/alex/technosfera/infopoisk/homework1/sekitei_part02/som_map/AlldataWiki.unit
+$URL_TEMPLATE_VECTOR /home/alex/technosfera/infopoisk/homework1/sekitei_part02/som_data_wiki/data_features.tv
+$URL_DATA_WINNER_MAPPING /home/alex/technosfera/infopoisk/homework1/sekitei_part02/som_map/AlldataWiki.dwm
+$URL_CLASS_INFO 
+$URL_LABELS 
+$METRIC at.tuwien.ifs.somtoolbox.layers.metrics.L2Metric
+$LAYER_REVISION $Revision: 4300 $
+$DESCRIPTION 
+$AVAILABLE_VIS 
+$DATA_TYPE unknown
+$DATA_DIM 
