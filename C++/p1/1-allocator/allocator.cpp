@@ -1,74 +1,105 @@
 #include "allocator.h"
-#include <stdlib.h>
-#include <vector>
 
-using namespace std;
-
-/*enum class AllocErrorType
+Pointer Allocator::alloc(size_t N)
 {
-    InvalidFree,
-    NoMemory,
-};*/
+	Pointer ans;
+	for (size_t i = 0; i + 1 < Pointers.size(); ++i)
+		if (reinterpret_cast<uintptr_t>(Pointers[i + 1].get()) - reinterpret_cast<uintptr_t>(Pointers[i].get()) - Pointers[i].size() >= N)
+		{
+			ans = Pointer(Pointers[i].get() + Pointers[i].size(), N);
+			Pointers.insert(Pointers.begin() + i, ans);
+			return ans;
+		}
 
-/*class AllocError: std::runtime_error 
+	if (Pointers.empty())
+	{
+		ans = Pointer(base, N);
+		Pointers.push_back(ans);
+		return ans;
+	}
+	if (reinterpret_cast<uintptr_t>(base) + size - reinterpret_cast<uintptr_t>(Pointers.back().get()) - Pointers.back().size() < N)
+	{
+		throw AllocError(AllocErrorType::NoMemory, "ENOMEM");
+	}
+	ans = Pointer(Pointers.back().get() + Pointers.back().size(), N);
+	Pointers.push_back(ans);
+	return ans;
+}
+
+void Allocator::realloc(Pointer &p, size_t N)
 {
-	private:
-	    AllocErrorType type;
+	if (p.get() == nullptr)
+	{
+		p = alloc(N);
+		return;
+	}
+	if (p.size() >= N)
+	{
+		p.resize(N);
+		return;
+	}
+	size_t index = 0;
+	while (Pointers[index].get() != p.get())
+		++index;
+	if (index + 1 == Pointers.size())
+		if (reinterpret_cast<uintptr_t>(base) + size - reinterpret_cast<uintptr_t>(p.get()) >= N)
+		{
+			p.resize(N);
+			return;
+		}
+	auto newPtr = alloc(N);
+	index = 0;
+	while (Pointers[index].get() != p.get())
+		++index;
+	Pointers.erase(Pointers.begin() + index);
+	p = newPtr;
+}
 
-	public:
-	    AllocError(AllocErrorType _type, std::string message):
-	            runtime_error(message),
-	            type(_type)
-	    {}
-
-	    AllocErrorType getType() const { return type; }
-};*/
-
-class Pointer 
+void Allocator::free(Pointer &p)
 {
-	public:
-	    void *get() const
-	    {	
+	auto was = false;
+	auto st = Pointers.begin();
+	auto end = Pointers.end();
+	while (st != end)
+	{
+		if (p.get() == st->get())
+		{
+			was = true;
+			Pointers.erase(st);
+			break;
+		}
+		st++;
+	}
+	p = Pointer();
+	if (!was)
+		throw AllocError(AllocErrorType::InvalidFree, "EIFREE");
+}
 
-	    	return 0; 
-	    } 
-};
-
-class Allocator
+std::string Allocator::dump()
 {
-	public:
-		memory_size = 0
-		void * memory_ptr = nullptr
-	    Allocator(void *base, size_t size)
-	    {
-	    	memory_size = size
-	    	memory_ptr = base
-	    }
-	    
-	    Pointer alloc(size_t N) 
-	    {
+	std::stringstream s;
+	for (auto x : Pointers)
+		s << x.get() << ' ' << x.size() << '\n';
+	return s.str();
+}
 
-	    	return Pointer(); 
-	 	}
-	    void realloc(Pointer &p, size_t N)
-	    {
-	    	return 0;
-	    }
-	    void free(Pointer &p)
-	    {
-	    	return 0;
-	    }
-
-	    void defrag()
-	    {
-
-	    }
-	    std::string dump() {return ""; }
-
-};
-
-/*int main(int argc, char * argv[])
+void Allocator::defrag()
 {
-	return 0;
-}*/
+	if (Pointers.empty())
+		return;
+	if (Pointers[0].get() != base)
+	{
+		std::memmove(base, Pointers[0].get(), Pointers[0].size());
+		Pointers[0].rebase(base);
+	}
+	for (size_t i = 1; i < Pointers.size(); ++i)
+		if (reinterpret_cast<uintptr_t>(Pointers[i - 1].get()) + Pointers[i - 1].size() != reinterpret_cast<uintptr_t>(Pointers[i].get()))
+		{
+			auto to = Pointers[i - 1].get() + Pointers[i - 1].size();
+			std::memmove(to, Pointers[i].get(), Pointers[i].size());
+			Pointers[i].rebase(to);
+		}
+}
 
+size_t Pointer::maxId = 0;
+std::map<size_t, std::pair<void*, size_t>> Pointer::Alias = std::map<size_t, std::pair<void*, size_t>>();
