@@ -19,7 +19,7 @@
 #define SERVER_PORT 3100
 #define SERVER_IP "127.0.0.1"
 #define EPOLL_RUN_TIMEOUT 20
-#define MAX_EPOLL_EVENTS_PER_RUN 10
+#define MAX_EPOLL_EVENTS_PER_RUN 1000
 #define SERVER_HOST_LEN 9
 #define EPOLL_QUEUE_LEN 1000
 #define BUF_SIZE 1024
@@ -40,7 +40,7 @@ int server_init()
 	setsockopt(MasterSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 	if (bind(MasterSocket, (struct sockaddr *)&SockAddr, sizeof(SockAddr)) < 0)
     {
-       perror ("bind");
+       perror ("bind error: ");
        exit (EXIT_FAILURE);
     }
 	return MasterSocket;
@@ -51,8 +51,11 @@ int add_client(int &MasterSocket, int &epfd)
 	struct epoll_event ev;
 	int client = accept(MasterSocket, 0, 0);
 	if (client < 0)
+	{
 		perror(accept_error);
-	ev.events = EPOLLIN | EPOLLET;
+		return -1;
+	}
+	ev.events = EPOLLIN | EPOLLET | EPOLLERR | EPOLLHUP;
 	ev.data.fd = client;
 	epoll_ctl(epfd, EPOLL_CTL_ADD, client, &ev);
 	return client;
@@ -69,23 +72,31 @@ void add_server(int &MasterSocket, int &epfd)
 int main()
 {
 	setbuf(stdout, NULL);
-	int MasterSocket = server_init();
-	int epfd = epoll_create(EPOLL_QUEUE_LEN);
+	auto MasterSocket = server_init();
+	auto epfd = epoll_create(EPOLL_QUEUE_LEN);
 	add_server(MasterSocket, epfd);
 	struct epoll_event events[EPOLL_QUEUE_LEN];
-	char RecvBuffer[BUF_SIZE];
+	char RecvBuffer[BUF_SIZE + 1];
 	listen(MasterSocket, SOMAXCONN);
 	std::vector<int> all_fd;
+
 	while(true)
 	{
 		int cou_events = epoll_wait(epfd, events, 1000, -1);
-		for (int i = 0; i < cou_events; i++)
+		if (cou_events == -1)
+		{
+			perror("epoll error:");
+			exit(EXIT_FAILURE);
+		}
+		for (auto i = 0; i < cou_events; i++)
 		{
 			if (events[i].data.fd == MasterSocket)
 			{
 				int client = add_client(MasterSocket, epfd);
-				std::cout << accept_msg;
-				send(client, welcome, sizeof(welcome), MSG_DONTROUTE);
+				if (client == -1)
+					continue;
+				printf("%s", accept_msg);
+				write(client, welcome, sizeof(welcome));
 				bool flag = true;
 				for (auto j = 0; j < all_fd.size(); j++)
 				{
@@ -101,25 +112,28 @@ int main()
 			}
 			else if (events[i].events & EPOLLIN)
 			{
-				int cou = 0;
+				auto cou = 0;
+				auto read_cou = 0;
 				while (true)
 				{
-					cou = read(events[i].data.fd, RecvBuffer, BUF_SIZE - 1);
+					cou = read(events[i].data.fd, RecvBuffer, BUF_SIZE);
+					if (read_cou == 0 && cou <= 0)
+						break;
+					else
+						read_cou++;
 					RecvBuffer[cou] = '\0';
 					printf("%s", RecvBuffer);
-					if (cou == 0)
-						break;
 					for (auto j = 0; j < all_fd.size(); j++)
 					{
 						if (all_fd[j] == 0)
 							continue;
 						send(all_fd[j], RecvBuffer, strlen(RecvBuffer), 0);
 					}
-					if (RecvBuffer[strlen(RecvBuffer) - 1] == '\n')
+					if (RecvBuffer[cou - 1] == '\n')
 						break;
 					memset(RecvBuffer, 0, sizeof(RecvBuffer));
 				}
-				if (cou == 0)
+				if (cou <= 0 && read_cou == 0)
 				{
 					printf("%s", con_term_msg);
 					close(events[i].data.fd);
@@ -137,5 +151,13 @@ int main()
 		}
 	}
 	close(MasterSocket);
+	for (auto x : all_fd)
+	{
+		if (x != 0)
+		{
+			close(x);
+			printf("%s", con_term_msg);
+		}
+	}
 	return 0;
 }
