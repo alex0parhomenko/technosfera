@@ -1,2 +1,2 @@
 #!/bin/bash
-python solution.py $@
+./broder_shingles.py "$@"

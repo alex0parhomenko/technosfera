@@ -2,16 +2,16 @@
 
 import document_pb2
 import struct
-from os import listdir
-import subprocess
-import string
+import gzip
 import sys
 
-table = string.maketrans("","")
 
 class DocumentStreamReader:
-    def __init__(self, stream):
-        self.stream = stream
+    def __init__(self, path):
+        if path.endswith('.gz'):
+            self.stream = gzip.open(path, 'rb')
+        else:
+            self.stream = open(path, 'rb')
 
     def __iter__(self):
         while True:
@@ -26,16 +26,14 @@ class DocumentStreamReader:
             yield doc
 
 
-def main(files):
-    zcat = subprocess.Popen(['zcat'] + files, stdout=subprocess.PIPE)
-
-    reader = DocumentStreamReader(zcat.stdout)
-    docs = []
-    urls = []
+def main():
+    reader = DocumentStreamReader(' '.join(sys.argv[1:]))
     for doc in reader:
-        docs.append(((doc.text).encode('utf8')).translate(table, string.punctuation))
-        urls.append(doc.url)
-    return docs, urls
+        print "%s\tbody: %d, text: %d" % (
+            doc.url,
+            len(doc.body) if doc.HasField('body') else 0,
+            len(doc.text) if doc.HasField('text') else 0
+        )
 
 
 if __name__ == '__main__':
