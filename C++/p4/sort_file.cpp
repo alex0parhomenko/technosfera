@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sstream>
+#include <set>
 #include <fstream>
 #include <limits.h>
 
@@ -37,6 +38,7 @@ public:
 
 vector <offset> offsets_in_file;
 long long now_offset_out_file = 0;
+long long unique_words = 0;
 
 void print_map_in_file(map<long long, vector <long long> > m, int fd)
 {
@@ -93,6 +95,7 @@ int main(int argc, char * argv[])
 	long long old_words_balance = 0;
 
 	map <long long, vector <long long> > doc_words;
+	set <long long> myset;
 
 	auto start_pos = 0;
 	auto count = 0;
@@ -120,6 +123,8 @@ int main(int argc, char * argv[])
 			for (auto i = 0; i < old_words_balance; i++)
 			{
 				memcpy(&now_word, buf + now_pos_in_str, byte8);
+				if (!myset.count(now_word))
+					myset.insert(now_word);
 				//cout << "now_write_word_with_add: " << now_word << endl;
 				now_pos_in_str += byte8;
 				balance -= byte8;
@@ -154,6 +159,8 @@ int main(int argc, char * argv[])
 			{
 				now_word = 0;
 				memcpy(&now_word, buf + now_pos_in_str, byte8);
+				if (!myset.count(now_word))
+					myset.insert(now_word);
 				//cout << "now_write_word: " << now_word << endl;
 				if (doc_words.count(now_word))
 				{
@@ -189,6 +196,12 @@ int main(int argc, char * argv[])
 	}
 	//cout << "all good this is end" << endl;
 	//return 0;
+	unique_words = myset.size();
+	//CLEAR ALL
+	myset.clear();
+	doc_words.clear();
+	free(buf);
+	//END CLEAN
 	for (auto x : offsets_in_file)
 	{
 		cout << x.now_pos << " " << x.end_pos << endl;
@@ -196,34 +209,65 @@ int main(int argc, char * argv[])
 	close(fd_in);
 
 	vector <long long> words;
-	long long min_word = LLONG_MAX;
-	for (auto x : offsets_in_file)
+	vector <int> w_count;
+	vector <long long> docs;
+
+	long long start_offset_doc =  unique_words * byte8 * 2; 
+	vector <int> pos_of_min_words;
+	for (auto i = 0; i < offsets_in_file.size(); i++)
 	{
 		long long word = 0;
-		lseek(fd_final, x.now_pos, SEEK_SET);
-		read(fd_final, &word, byte8);
+		long long doc = 0;
+		int cou = 0;
+		lseek(fd_out, offsets_in_file[i].now_pos, SEEK_SET);
+		read(fd_out, &word, byte8);
+		read(fd_out, &cou, byte4);
+		read(fd_out, &doc, byte8);
+		offsets_in_file[i].now_pos += byte8 + byte4 + byte8;
 		words.push_back(word);
-		min_word = min(min_word, word);
+		w_count.push_back(cou);
+		docs.push_back(doc);
+		//min_word = min(min_word, word);
 	}
-	while (true)
+	/*for (auto i = 0; i < words.size(); i++)
 	{
-
-		bool flag = 0;
-		for (auto x : offsets_in_file)
+		if (words[i] == min_word)
+			pos_of_min_words.push_back(i);
+	}*/
+	int flag = 0;
+	long long prev_min_word = -1;
+	while(true)
+	{
+		long long min_doc = LLONG_MAX;
+		long long min_word = LLONG_MAX;
+		int pos_min_doc = -1;
+		for (auto i = 0; i < words.size(); i++)
 		{
-			if (x.now_pos == x.end_pos)
-				continue;
-			else
-				flag = 1;
-			long long word = 0;
-			lseek(fd_final, x.now_pos, SEEK_SET);
-			read(fd_final, &word, byte8);
-			words.push_back(word);
-			min_word = min(min_word, word);
+			if (words[i] < min_word)
+			{
+				min_word = words[i];
+				min_doc = docs[i];
+				pos_min_doc = i;
+			}
+			else if (words[i] == min_word && docs[i] < min_doc)
+			{
+				min_doc = docs[i];
+				pos_min_doc = i;
+			}
 		}
-		if (!flag)
-			break;
+		if (prev_min_word != min_word)
+		{
+			
+			write(fd_final, &min_word)
+			start_offset_doc
+		}
+		if (w_count > 1)
+		{
+
+		}
 	}
 	close(fd_out);
 	return 0;
 }
+//Спросить про кол-во уникальных слов
+//Спросить можно ли делать merge sort в RAM
