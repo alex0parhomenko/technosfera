@@ -173,7 +173,7 @@ class Test3(TestBase):
         c.close()
             
         self.assertTrue(waitFor(lambda: self.reader.countString("connection terminated") == 1),
-            "Invalid count of 'connection terminated' strings in logs.")
+            "Invalid count of 'connection terminated' strings in logs. 1")
         c1.close()
         c2.close()
         self.assertTrue(waitFor(lambda: self.reader.countString("connection terminated") == 3),

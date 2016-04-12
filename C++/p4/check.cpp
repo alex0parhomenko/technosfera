@@ -26,6 +26,10 @@ long long get_rand(long long low_bound, long long up_bound)
 
 void print_example(long long doc1, vector <long long> v)
 {
+	//sort(v.begin(), v.end());
+	auto it = unique(v.begin(), v.end());
+	v.resize(distance(v.begin(), it));
+	sort(v.begin(), v.end());
 	cout << doc1 << " " << v.size() << " ";
 	for (auto i = 0; i < v.size(); i++)
 	{
@@ -40,7 +44,7 @@ int main(int argc, char * argv[])
 {
 	srand(time(NULL));
 	auto cou_examples = 10;
-	auto fd_out = open(file_name, O_RDONLY | O_WRONLY);
+	auto fd_out = open(file_name, O_RDWR);
 	vector <pair <long long, vector <long long> > > index;
 	for (auto i = 0; i < cou_examples; i++)
 	{
