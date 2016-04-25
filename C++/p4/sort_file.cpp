@@ -96,8 +96,23 @@ void print_map_in_file(map<long long, vector <long long> > m, int fd)
 int main(int argc, char * argv[])
 {
 	auto fd_in = open(file_in_name, O_RDONLY);
-	auto fd_out = open(file_out_name, O_RDWR);
-	auto fd_final = open(result_file, O_RDWR);
+	if (fd_in == -1)
+	{
+		perror("cannot open input file");
+		exit(EXIT_FAILURE);
+	}
+	auto fd_out = open(file_out_name, O_RDWR | O_CREAT, S_IREAD | S_IWRITE);
+	if (fd_out == -1)
+	{
+		perror("cannot open/create out file");
+		exit(EXIT_FAILURE);
+	}
+	auto fd_final = open(result_file, O_RDWR | O_CREAT, S_IREAD | S_IWRITE);
+	if (fd_final == -1)
+	{
+		perror("cannot open/create result file");
+		exit(EXIT_FAILURE);
+	}
 	auto BUF_SIZE = mem_size / 2;
 	char * buf = (char *)malloc(BUF_SIZE);
 	
@@ -124,6 +139,11 @@ int main(int argc, char * argv[])
 		now_read = start_pos;
 		while (balance > 0 && (count = read(fd_in, buf + now_read, balance)) > 0)
 		{
+			if (count == -1)
+			{
+				perror("cannot read input file");
+				exit(EXIT_FAILURE);
+			}
 			balance -= count;
 			now_read += count;
 		}
