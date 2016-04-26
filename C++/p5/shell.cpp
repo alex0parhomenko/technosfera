@@ -13,7 +13,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
-
+#include <set>
 #define f first
 #define s second
 #define mp make_pair
@@ -28,17 +28,28 @@ struct proc_type{
     proc_type(int a, int b, int c): pid(a), st(b), type(c) {}
 };
 
-vector <int> all_proc;
-
+set <int> all_proc;
+set <int> back_proc;
 
 void hd1(int sig)
 {
-    for (auto i = 0; i < all_proc.size(); i++)
+    if (!all_proc.size())
+        exit(0);
+    auto beg = all_proc.begin();
+    auto end = all_proc.end();
+    while (beg != end)
     {
-        kill(SIGINT, all_proc[i]);
+        cout << *beg << endl;
+        kill(SIGINT, *beg);
+        beg++;
     }
-    return ;
 }
+
+void hd2(int sig)
+{
+    return;
+}
+
 
 struct comand
 {
@@ -53,14 +64,11 @@ struct comand
         this->is_background = is_back;
         in = s_in;
         out = s_out;
-        //cout << s << endl;
-        //cout << v[0] << endl;
         args_count = v.size();
 
         comand_name = (char *)malloc(sizeof(char) * (s.size() + 1));
         memcpy(comand_name, s.c_str(), s.size());
         comand_name[s.size()] = '\0';
-        //cout <<  "com name is:" << comand_name << endl;
         this->args = (char **)malloc(sizeof(char *) * (v.size() + 1));
 
         for (auto i = 0; i < v.size(); i++)
@@ -233,8 +241,6 @@ comand parse_comand(string s)
         is_background = true;
         args.pop_back();
     }
-    //comand cc =  comand(comand_name, args, in, out);
-    //cout << cc.comand_name << " " << cc.args[0] << endl;
     return comand(comand_name, args, in, out, is_background);
 }
 
@@ -266,45 +272,24 @@ expression parse_expression(string s)
             ss += s[pos];
             op.push_back(ss);
         }
-        /*else if (s[pos] == '&' && (pos + 1 >= s.size() || s[pos + 1] != '&' ))
-        {
-            v.push_back(parse_comand(now_s));
-            now_s = "";
-            string ss = "";
-            ss += s[pos];
-            op.push_back(ss);
-        }*/
         else
         {
             now_s += s[pos];
         }
         pos++;
     }
-    //cout << "NOW STRING: " << now_s << endl;
-
     if (now_s.size())
-    {
-        //comand cc = parse_comand(now_s);
-        //cout << "I here man: " << cc.comand_name << " " << cc.args[0] << endl;
         v.push_back(parse_comand(now_s));
-    }
     bool flac = v[v.size() - 1].is_background;
-    /*cout << v.size() << endl;
-    cout << op.size() << endl;                  if (!inf)
-    cout << v[0].comand_name << endl;
-    cout << v[0].args_count << endl;
-    cout << v[0].args[0] << endl;
-    cout << "lala" << endl;*/
     return expression(v, op, flac);
 }
 
 
-proc_attr exe_comand(comand com, int fd_in, int fd_out, bool is_wait)
+proc_attr exe_comand(comand com, int fd_in, int fd_out, bool is_wait, bool is_index)
 {
     int now_pid = 0;
     if (!(now_pid = fork()))
     {
-        //cout << "secproc\n";
         if (fd_in != -1)
         {
             dup2(fd_in, 0);
@@ -326,60 +311,53 @@ proc_attr exe_comand(comand com, int fd_in, int fd_out, bool is_wait)
         execvp(com.comand_name, com.args);
         exit(0);
     }
-    //all_proc.push_back(proc_type(now_pid, -1, com.is_background));
-    /*int st = 0;
-    int pid = wait(&st);
-    //cout << "LALALALLA" << endl;
-    cerr << "Process " << pid <<  " exited: " << st << endl;
-    return proc_attr(pid, st);*/
     if (is_wait)
     {
         int st = 0;
         int pid = 0;
+        if (is_index)
+            all_proc.insert(now_pid);
         while (waitpid(now_pid, &st, 0) >= 0) {}
+        if (is_index)
+            all_proc.erase(now_pid);
         cerr << "Process " << now_pid <<  " exited: " << WEXITSTATUS(st) << endl;
         return proc_attr(pid, st);
     }
     return proc_attr(-1, -1);
 }
 
-void exe_expr(expression now_expression)
+void exe_expr(expression now_expression, bool is_index)
 {
-    //print_expression(now_expression);
     int background_procceses = 0;
     auto next_op = 0;
 
-    //cout << "PROC END" << endl;
     int fd_pipe[40] = {0};
     auto pos_fd_pipe = 0;
     int parallel_proccess_count = 0;
     auto info = proc_attr(-1, -1);
     if (next_op < now_expression.op.size() && now_expression.op[next_op] == "|")
     {
-        //cout << "I HERE MAN \n";
         pipe(fd_pipe + pos_fd_pipe);
-        info = exe_comand(now_expression.comands[0], -1, fd_pipe[pos_fd_pipe + 1], false);
+        info = exe_comand(now_expression.comands[0], -1, fd_pipe[pos_fd_pipe + 1], false, is_index);
         close(fd_pipe[pos_fd_pipe + 1]);
         pos_fd_pipe += 2;
         parallel_proccess_count += 1;   
     }
     else
     {
-        info = exe_comand(now_expression.comands[0], -1, -1, true);
+        info = exe_comand(now_expression.comands[0], -1, -1, true, is_index);
     }
     for (auto i = 0; i < now_expression.op.size(); i++)
     {
-        //cout << "BAD\n";
         next_op++;
         if (now_expression.op[i] == "&&")
         {
-            //cout << "&&\n";
             if (!info.st)
             {
                 if (next_op < now_expression.op.size() && now_expression.op[next_op] == "|")
                 {
                     pipe(fd_pipe + pos_fd_pipe);
-                    info = exe_comand(now_expression.comands[i + 1], -1, fd_pipe[pos_fd_pipe + 1], false);
+                    info = exe_comand(now_expression.comands[i + 1], -1, fd_pipe[pos_fd_pipe + 1], false, is_index);
                     close(fd_pipe[pos_fd_pipe + 1]);
                     parallel_proccess_count++;
                     pos_fd_pipe += 2;
@@ -387,19 +365,18 @@ void exe_expr(expression now_expression)
                 else
                 {
                     parallel_proccess_count = 0;
-                    info = exe_comand(now_expression.comands[i + 1], -1, -1, true);
+                    info = exe_comand(now_expression.comands[i + 1], -1, -1, true, is_index);
                 }
             }
         }
         else if (now_expression.op[i] == "||")
         {
-            //cout << "||\n";
             if (info.st)
             {
                 if (next_op < now_expression.op.size() && now_expression.op[next_op] == "|")
                 {
                     pipe(fd_pipe + pos_fd_pipe);
-                    info = exe_comand(now_expression.comands[i + 1], -1, fd_pipe[pos_fd_pipe + 1], false);
+                    info = exe_comand(now_expression.comands[i + 1], -1, fd_pipe[pos_fd_pipe + 1], false, is_index);
                     close(fd_pipe[pos_fd_pipe + 1]);
                     parallel_proccess_count++;
                     pos_fd_pipe += 2;
@@ -407,19 +384,18 @@ void exe_expr(expression now_expression)
                 else
                 {
                     parallel_proccess_count = 0;
-                    info = exe_comand(now_expression.comands[i + 1], -1, -1, true);
+                    info = exe_comand(now_expression.comands[i + 1], -1, -1, true, is_index);
                 }
             }
         }
         else if (now_expression.op[i] == "|")
         {
-            //cout << "|\n";
             if (parallel_proccess_count)
             {
                 if (next_op < now_expression.op.size() && now_expression.op[next_op] == "|")
                 {
                     pipe(fd_pipe + pos_fd_pipe);
-                    info = exe_comand(now_expression.comands[i + 1], fd_pipe[pos_fd_pipe - 2], fd_pipe[pos_fd_pipe + 1], false);
+                    info = exe_comand(now_expression.comands[i + 1], fd_pipe[pos_fd_pipe - 2], fd_pipe[pos_fd_pipe + 1], false, is_index);
                     close(fd_pipe[pos_fd_pipe + 1]);
                     close(fd_pipe[pos_fd_pipe - 2]);
                     parallel_proccess_count++;
@@ -427,9 +403,7 @@ void exe_expr(expression now_expression)
                 }
                 else
                 {
-                    //cout << "I NER\n";
-                    //info = exe_comand(now_expression.comands[i + 1], -1, -1, true);
-                    info = exe_comand(now_expression.comands[i + 1], fd_pipe[pos_fd_pipe - 2], -1, true);
+                    info = exe_comand(now_expression.comands[i + 1], fd_pipe[pos_fd_pipe - 2], -1, true, is_index);
                     close(fd_pipe[pos_fd_pipe - 2]);
                     parallel_proccess_count = 0;
                     pos_fd_pipe += 2;
@@ -438,82 +412,44 @@ void exe_expr(expression now_expression)
         }
 
     }
-    /*if (now_comand.in.size())
-    {
-        auto fd_in = open(now_comand.in.c_str(), O_RDONLY);
-        dup2(fd_in, 0);
-    }
-    if (now_comand.out.size())
-    {
-        auto fd_out = open(now_comand.out.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_TRUNC, S_IREAD | S_IWRITE);
-        dup2(fd_out, 1);
-    }
-    execvp(now_comand.comand_name, now_comand.args);*/
     for (auto i = 0; i < 40; i++)
-    {
-        if (fd_pipe[i] > 1)
-        {
+        if (fd_pipe[i])
             close(fd_pipe[i]);
-        }
-    }
 }
 
 
 int main(int argc, char * argv[])
 {
-    //signal(SIGCHLD, hdchld);
     signal(SIGINT, hd1);
     string s;
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
     while (getline(cin, s))
     {
-        //cout << s << endl;
         if (!s.size())
             continue;
         expression now_expression = parse_expression(s);
         if (now_expression.is_background)
         {
-            //cout << "I HERE\n";
             auto now_pid=0;
             if (!(now_pid = fork()))
             {
-                exe_expr(now_expression);
+                exe_expr(now_expression, false);
                 exit(0);
             }
-            all_proc.push_back(now_pid);
+            back_proc.insert(now_pid);
         }
         else
-            exe_expr(now_expression);
-        //print_expression(now_expression);
-        //continue;
-        //cout << "all good" << endl << endl << endl;
+            exe_expr(now_expression, true);
 
-        //cout << "all good" << endl;
-        /*cout << now_comand.comand_name << " ";
-        for (auto i = 0; i < now_comand.args_count; i++)
-        {
-            cout << now_comand.args[i] << " ";
-        }
-        cout << "INPUT OUTPUT"<< now_comand.in << " " << now_comand.out;
-        cout << endl;*/
-        //int now_pid = 0;
-        //if (!(now_pid = fork()))
-        //{
-            
-            //cout << "AZAZA\n";
-            //cout << bool(cin) << endl;
-            //cout << "THE END\n";
-            //exit(0);
-        //}
-        //all_proc.push_back(proc_type(now_pid, -1, 0));
-        //int st = 0;
-        //int pid = wait(&st);
     }
-    for (auto i = 0; i < all_proc.size(); i++)
+    auto beg = back_proc.begin();
+    auto end = back_proc.end();
+    while (beg != end)
     {
         int st = 0;
-        while (waitpid(all_proc[i], &st, 0) == -1) {}
+        while (waitpid(*beg, &st, 0) >= 0) {}   
+        beg++;
     }
     return 0;
 }
