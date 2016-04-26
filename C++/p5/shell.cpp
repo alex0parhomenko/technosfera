@@ -33,21 +33,14 @@ set <int> back_proc;
 
 void hd1(int sig)
 {
-    if (!all_proc.size())
-        exit(0);
+    signal(SIGINT, hd1);
     auto beg = all_proc.begin();
     auto end = all_proc.end();
     while (beg != end)
     {
-        cout << *beg << endl;
-        kill(SIGINT, *beg);
+        kill(*beg, sig);
         beg++;
     }
-}
-
-void hd2(int sig)
-{
-    return;
 }
 
 
@@ -437,19 +430,12 @@ int main(int argc, char * argv[])
                 exe_expr(now_expression, false);
                 exit(0);
             }
-            back_proc.insert(now_pid);
         }
         else
             exe_expr(now_expression, true);
 
     }
-    auto beg = back_proc.begin();
-    auto end = back_proc.end();
-    while (beg != end)
-    {
-        int st = 0;
-        while (waitpid(*beg, &st, 0) >= 0) {}   
-        beg++;
-    }
+    int st = 0;
+    while (wait(&st) != -1){}
     return 0;
 }
