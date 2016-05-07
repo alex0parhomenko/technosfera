@@ -14,7 +14,6 @@
 #include <sys/types.h>
 #include <sstream>
 #include <sys/socket.h>
-
 #include <netinet/in.h>
 #include <errno.h>
 #include <arpa/inet.h>
@@ -26,7 +25,7 @@
 #include <sys/epoll.h>  
 
 #define SHARED_MEMORY_NAME "my_shared_memory"
-#define SERVER_PORT 3102
+#define SERVER_PORT 3100
 #define SERVER_IP "127.0.0.1"
 #define EPOLL_RUN_TIMEOUT 20
 #define MAX_EPOLL_EVENTS_PER_RUN 1000
@@ -44,7 +43,6 @@ int semid = 0;
 
 enum{ notes_amount = 3591, key_len = 32, value_len = 256, tl_len = 4, mem_size = (1 << 20), is_empty_size = 3591, sem_count = 100};
 hash<string> hash_fn;
-int port = 3101;
 char * mem = NULL;
 char * is_empty_mem = NULL;
 int sock_fd[4][2];
@@ -298,6 +296,29 @@ char * get(string key, char * mem, char * is_empty_mem)
 	return NULL;
 }
 
+void trash_collect()
+{
+	auto pos = 0;
+	char del = 1;
+	for (auto note_num = 0; note_num < notes_amount; note_num++)
+	{
+		int now_tl = 0;
+		sem_wait(note_num);
+		sem_up(note_num);
+		memcpy(&now_tl, mem + pos + key_len, sizeof(int));
+		now_tl--;
+		if (now_tl == 0)
+		{
+			memset(mem + pos, 0, key_len + tl_len + value_len);
+			memcpy(is_empty_mem + note_num, &del, sizeof(char));
+		}
+		else
+			memcpy(mem + pos + key_len, &now_tl, sizeof(int));
+		sem_down(note_num);
+		pos += key_len + value_len + tl_len;
+	}
+}
+
 
 static int send_file_descriptor(int socket, int fd_to_send)
 {
@@ -460,6 +481,15 @@ int main(int argc, char * argv[])
 		}
 		else
 			close(sock_fd[i][1]);
+	}
+	if (!fork())
+	{
+		while (true)
+		{
+			trash_collect();
+			sleep(1);
+		}
+		exit(0);
 	}
 	start_server();
     munmap((void *)ptr, length);
