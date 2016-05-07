@@ -11,20 +11,27 @@
 #include <sys/shm.h>
 #include <sys/ipc.h>
 #include <boost/bind.hpp>
+#include <sys/types.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <boost/shared_ptr.hpp>
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/asio.hpp>
 
+#define SHARED_MEMORY_NAME "my_shared_memory"
 using namespace std;
 using boost::asio::ip::tcp;
 
 enum{ notes_amount = 3591, key_len = 32, value_len = 256, tl_len = 4, mem_size = (1 << 20), is_empty_size = 3591, SIZE = 1024};
 hash<string> hash_fn;
+int port = 3101;
 char * mem = NULL;
 char * is_empty_mem = NULL;
+int sock_fd[4][2];
 
 bool set(string key, string value, string tl, char * mem, char * is_empty_mem);
 char * get(string key,char * mem, char * is_empty_mem);
+void parent_write(char * s, int fd);
 
 class tcp_connection : public boost::enable_shared_from_this<tcp_connection>
 {
@@ -41,6 +48,18 @@ public:
     tcp::socket& socket()
     {
         return socket_in_;
+    }
+
+    /*void create_pair()
+    {
+    	boost::system::error_code connect_pair(
+    		basic_socket< Protocol, SocketService1 > & socket1,
+    			basic_socket< Protocol, SocketService2 > & socket2,
+    			boost::system::error_code & ec);
+    }*/
+    void throw_socket()
+    {
+
     }
 
     void read_client()
@@ -77,7 +96,6 @@ private:
             buf_in[bytes_transferred] = '\0';
             string s = buf_in;
             s.erase(s.find_last_not_of(" \n\r\t")+1);
-            //cout << s << endl;
             string op;
             auto pos = 0;
             memset(buf_out, 0, SIZE);
@@ -137,7 +155,7 @@ private:
             		value += s[pos];
             		pos++;
             	}
-            	if (!key.size() || !tl.size() || !value.size() || key.size() > 256 || value.size() > 32 || !atoi(tl.c_str()))
+            	if (!key.size() || !tl.size() || !value.size() || key.size() > 256 || value.size() > 32 || (!atoi(tl.c_str()) && tl != "0"))
             	{
             		string ans = "invalid operation, try again\n";
             		memcpy(buf_out, ans.c_str(), ans.size() + 1);
@@ -199,7 +217,8 @@ private:
 
     void handle_accept(tcp_connection::pointer new_connection, const boost::system::error_code& error)
     {
-        new_connection->read_client();
+    	new_connection->throw_socket();
+        //new_connection->read_client();
         start_accept();
     }
 };
@@ -261,16 +280,67 @@ char * get(string key, char * mem, char * is_empty_mem)
 	return NULL;
 }
 
+void parent_write(char * s, int fd)
+{
+	write(fd, s, strlen(s));
+}
+
+tcp::socket child_read(int fd)
+{
+	char buf[SIZE];
+	auto cou_b = read(fd, buf, SIZE);
+	buf[cou_b] = '\0';
+	return (tcp::socket)(atoi(buf));
+}
+
 
 int main(int argc, char * argv[])
 {
 	setbuf(stdout, NULL);
-	mem = (char *)malloc(mem_size * sizeof(char));
-	is_empty_mem = (char *)malloc(is_empty_size * sizeof(char));
+	srand(time(NULL));
+	auto pids = new int[4];
+	auto length = mem_size + is_empty_size + 1;
+	int fd = open("mmap.txt", O_CREAT | O_RDWR | O_TRUNC, 0666);
+	ftruncate(fd, length);
+	auto ptr = (char *)mmap(0, length, PROT_WRITE | PROT_READ, MAP_SHARED, fd, 0);
+	if (ptr == MAP_FAILED)
+	{
+		perror("Mapping failed");
+		exit(EXIT_FAILURE);
+	}
+	close(fd);
+	mem = ptr;
+	is_empty_mem = ptr + mem_size;
+
 	memset(is_empty_mem, 0, is_empty_size);
 	memset(mem, 0, mem_size);
-	
-	auto port = 3101;
+
+	for (auto i = 0; i < 4; i++)
+		socketpair(PF_LOCAL, SOCK_STREAM, 0, sock_fd[i]);
+
+
+	for (auto i = 0; i < 4; i++)
+	{
+		if (!(pids[i] = fork()))
+		{
+			close(sock_fd[i][0]);
+			char buf[20];
+			auto cou_b = 0;
+			while ((cou_b = read(sock_fd[i][1], buf, 18)) != -1)
+			{
+				cout << cou_b << endl;
+				buf[cou_b] = '\0';
+				cout << buf << endl;
+			}
+			exit(0);
+		}
+		else
+		{
+			close(sock_fd[i][1]);
+			char buf[] = "hi proccess";
+			write(sock_fd[i][0], buf, strlen(buf));
+		}	
+	}
 	try
     {
         boost::asio::io_service io_service;
@@ -281,5 +351,12 @@ int main(int argc, char * argv[])
     {
         std::cerr << e.what() << std::endl;
     }
+    munmap((void *)ptr, length);
 	return 0;
 }
+
+
+
+
+
+
