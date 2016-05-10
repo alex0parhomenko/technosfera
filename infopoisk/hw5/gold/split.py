@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import re
 import sys, json
 from sklearn.ensemble import RandomForestClassifier
@@ -16,26 +17,31 @@ class extract_features:
         self.is_next_space = []
         self.len_prev_word = []
         self.count_words_to_prev_point = []
+        self.count_words_to_prev_end_symbol = []
         self.is_prev_word_start_up_letter = []
         self.is_prev_letter_point = []
+        self.is_next_letter_point = []
         self.is_last_symbol = []
+        self.is_prev_letter_digit = []
         self.mark = []
 
-    def collect_features(self, par, sen):
+    def collect_features(self, par, sen = None):
         par = par.strip()
         ind_par = findOccurences(par, '.')
         ind_true = []
         pos = 0
-        for num, s in enumerate(sen):
-            pos += len(s) 
-            if num == 0:
-                ind_true.append(pos - 1)
-            else:
-                ind_true.append(pos)
-                pos += 1
+        if sen != None:
+            for num, s in enumerate(sen):
+                pos += len(s) 
+                if num == 0:
+                    ind_true.append(pos - 1)
+                else:
+                    ind_true.append(pos)
+                    pos += 1
 
-        for ind in ind_par:
-            self.mark.append(1 if ind in ind_true else 0)
+            for ind in ind_par:
+                self.mark.append(1 if ind in ind_true else 0)
+
 
         prev_ind = 0
         for ind in ind_par:
@@ -48,6 +54,11 @@ class extract_features:
                 self.is_next_space.append(1)
             else:
                 self.is_next_space.append(0)
+
+            if ind + 1 < len(par) and par[ind + 1] == '.':
+                self.is_next_letter_point.append(1)
+            else:
+                self.is_next_letter_point.append(0)
 
             if ind + 1 == len(par):
                 self.is_last_symbol.append(1)
@@ -67,17 +78,27 @@ class extract_features:
 
             self.count_words_to_prev_point.append(len(filter(lambda x: len(x) > 0, par[prev_ind + 1:ind].split(' '))))
 
+            prev_end_symbol = max(par.rfind('!', 0, ind), par.rfind('?', 0, ind), par.rfind('.', 0, ind), 0)
+            #print prev_end_symbol, ind
+            self.count_words_to_prev_end_symbol.append(len(filter(lambda x: len(x) > 0, par[prev_end_symbol + 1:ind].split(' '))))
+
             if ind - 1 >= 0 and par[ind - 1] == '.':
                 self.is_prev_letter_point.append(1)
             else:
                 self.is_prev_letter_point.append(0)
+
+            if ind - 1 >= 0 and par[ind - 1].isdigit():
+                self.is_prev_letter_digit.append(1)
+            else:
+                self.is_prev_letter_digit.append(0)
 
             prev_ind = ind
 
     def pick_features(self):
         return [self.is_next_letter_up, self.is_next_space, self.len_prev_word, \
         self.count_words_to_prev_point, self.is_prev_word_start_up_letter, \
-        self.is_prev_letter_point, self.is_last_symbol]
+        self.is_prev_letter_point, self.is_last_symbol, self.count_words_to_prev_end_symbol,\
+         self.is_prev_letter_digit, self.is_next_letter_point]
 
     def get_target(self):
         return self.mark
@@ -89,16 +110,21 @@ class extract_features:
 
 
 def fit_model(data, target):
+    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.05, n_estimators=250,\
+     subsample=1.0, min_samples_split=10, min_samples_leaf=5,\
+     max_depth=4)
     clf.fit(data, target)
     y_pred = clf.predict(data)
+
     print accuracy_score(y_pred, target)
     joblib.dump(clf, 'model/model.pkl') 
     return 0
 
+
 def cv_model(data, target):
-    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.1, n_estimators=200,\
-     subsample=1.0, min_samples_split=2, min_samples_leaf=3,\
-     max_depth=3)
+    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.05, n_estimators=250,\
+      min_samples_split=10, min_samples_leaf=5,\
+     max_depth=4)
     kf = KFold(len(data), n_folds=3, shuffle = True)
     for train_index, test_index in kf:
         X_train, X_test = data[train_index], data[test_index]
@@ -110,65 +136,60 @@ def cv_model(data, target):
 
 def splitParagraph(para):
     clf = joblib.load('model/model.pkl')
-
     res = []
+    st_col = extract_features()
+    st_col.collect_features(para)
+    v = np.asarray(st_col.get_features())
 
-    cands = para.split('.')
-    r = cands[0]
-    for c in range(1, len(cands)):
-        if cands[c].startswith(' '):
-            res.append(r + '.')
-            r = cands[c]
-        else:
-            r += '.' + cands[c]
-    res.append(r)
+    pred = clf.predict(v)
+    prev = 0
+    pos = -1
+    for num, sym in enumerate(para):
+        if sym == '.':
+            pos += 1
+            if (pred[pos] == 1):
+                res.append(para[prev:num + 1])
+                prev = num + 1
+    if not res:
+        res.append(para)
 
     return {'Paragraph': para, 'Sentences': res}
+
+
+def dump_to_file(file_name, gs):
+    with open(file_name, 'w') as f_out:
+        for i in range(len(gs)):
+            d = splitParagraph(gs[i]['Paragraph'])
+            s = json.dumps(d, ensure_ascii=False).encode('utf8')
+            f_out.write(s + "\n")
+    return 0
+
+def get_data(gs):
+    data = []
+    target = []
+    for i in range(len(gs)):
+        st_col = extract_features()
+        st_col.collect_features(gs[i]['Paragraph'], gs[i]['Sentences'])
+        target = target + st_col.get_target()
+
+        if i == 0:
+            data = st_col.get_features()
+        else:
+            data = np.concatenate((data, st_col.get_features()), axis = 0)
+    return np.asarray(data, dtype = np.float), np.asarray(target, dtype = np.float)
+
 
 
 def main():
     fg = open(sys.argv[1])
     gs = [json.loads(s) for s in fg.readlines()]
-    f_out = open('broken_gold.json', 'w')
 
-    data = None
-    target = []
-
-    for i in range(len(gs)):
-        st_col = extract_features()
-        st_col.collect_features(gs[i]['Paragraph'], gs[i]['Sentences'])
-        #data = data + st_col.get_features()
-        target = target + st_col.get_target()
-        if i == 0:
-            data = st_col.get_features()
-        else:
-            data = np.concatenate((data, st_col.get_features()), axis = 0)
-        #print data
-        #par1 = gs[i]['Paragraph']
-        #par2 = gs[i]['Sentences']
-        #print par2
-        #if par1 == ' '.join(par2):
-        #   print True
-        #else: print False
-        #par_list.append(gs[i]['Paragraph'])
-        #d = splitParagraph(gs[i]['Paragraph'])
-        #s = json.dumps(d, ensure_ascii = False)
-        #f_out.write(s.encode('utf8') + "\n")
-    #print data.shape
-    #print len(target)
-    data = np.asarray(data, dtype = np.float)
-    target = np.asarray(target, dtype = np.float)
-    pos_in_target = 0
-    for i in range(len(gs)):
-        ind = 0
-        for j in range(len(gs[i]['Paragraph']))
-            if gs[i]['Paragraph'][j] == '.':
-                if target[pos_in_target] == 1:
-                    
-    #print data.shape
-    print target
-    cv_model(data, target)
-    f_out.close()  
+    data, target = get_data(gs)
+    #fit_model(data, target)
+    dump_to_file('broken_gold.json', gs)
+    #return 0
+            
+    #cv_model(data, target)
     return 0 
 
 
