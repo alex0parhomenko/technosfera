@@ -22,11 +22,17 @@ clf = joblib.load('model/model.pkl')
 stemmer = SnowballStemmer("russian");
 table = string.maketrans("","")
 
-features_list = None
-document_frequency = None
-term_frequency = None
-doc_count = None
+features_list = []
 
+with open('words') as f:
+    for num, line in enumerate(f):
+        if num == 1000:
+            break
+        line = line.strip()
+        f, s = line.split(' ')
+        features_list.append(f)
+
+features_list = list(set(features_list))
 
 def test_trans(s):
     return s.translate(table, string.punctuation)
@@ -44,23 +50,21 @@ class StatsCollector:
         self.url_words = None
         self.url_digits = None
         self.em_words = None
+        self.word_features_in_tag = None
         
     def collect(self, mark, pageInb64, url):
         global features_list
-        global document_frequency
-        global term_frequency
-        global doc_count
 
-        doc_count += 1
         html = base64.b64decode(pageInb64).decode('utf-8')
         parser = SpamHTMLParser()
         parser.feed(html)
 
-        text = test_trans(parser.text().encode('utf-8'))
-        titletext = test_trans(parser.titletext().encode('utf-8'))
-        atext = test_trans(parser.atext().encode('utf-8'))
-        strongtext = test_trans(parser.strongtext().encode('utf-8'))
-        emtext = test_trans(parser.emtext().encode('utf-8'))
+        text = test_trans(parser.text().encode('utf-8')).replace('  ', ' ')
+        titletext = test_trans(parser.titletext().encode('utf-8')).replace('  ', ' ')
+        atext = test_trans(parser.atext().encode('utf-8')).replace('  ', ' ')
+
+        strongtext = test_trans(parser.strongtext().encode('utf-8')).replace('  ', ' ')
+        emtext = test_trans(parser.emtext().encode('utf-8')).replace('  ', ' ')
 
         doc_len = len(text.split(' '))
 
@@ -84,16 +88,17 @@ class StatsCollector:
         #term_frequency.append(l)
         #l = np.asarray(map(lambda x: bool(text.count(x)), features_list))
         #document_frequency += l
-
-
         self.mark = mark
-
+        tag_text = emtext + ' ' + strongtext + ' ' + atext
+        #print tag_text, len(text), len(tag_text), "\n\n"
         self.word_features = map(lambda w: text.count(w), features_list)
+        self.word_features_in_tag = map(lambda w: tag_text.count(w), features_list)
         parser.close()
 
     def get_features(self):
         return [self.total_words, self.header_words, self.average_word_length, self.links_words,\
-         self.compress, self.strong_words, self.em_words, self.url_words, self.url_digits] + self.word_features
+         self.compress, self.strong_words, self.em_words, self.url_words, self.url_digits] \
+          + self.word_features_in_tag + self.word_features
 
     def get_target(self):
         return self.mark
@@ -109,19 +114,22 @@ def fit_model():
 
     with open (DATA_FILE) as df:
          for i, line in enumerate(df):
-                line = line.strip()
-                parts = line.split()
-                stats_collector = StatsCollector()
-                stats_collector.collect(int(parts[1]), parts[3], parts[2])
-                data.append(stats_collector.get_features())
-                target.append(stats_collector.get_target())
+            print i
+            line = line.strip()
+            parts = line.split()
+            stats_collector = StatsCollector()
+            stats_collector.collect(int(parts[1]), parts[3], parts[2])
+            data.append(stats_collector.get_features())
+            target.append(stats_collector.get_target())
+            #print len(data[-1])
+
 
     data = np.asarray(data, dtype = np.float)
     target = np.asarray(target, dtype = np.float)
     print data.shape, target.shape
     df.close()
-    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.07, n_estimators=330, min_samples_split=30,\
-         min_samples_leaf=1, max_depth=4)
+    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.07, n_estimators=300, min_samples_split=30,\
+         min_samples_leaf=15, max_depth=4)
 
     clf.fit(data, target)
     y_pred = clf.predict(data)
@@ -140,6 +148,9 @@ def cv_model():
             line = line.strip()
             parts = line.split()
             stats_collector = StatsCollector()
+            #print parts[2]
+            #print base64.b64decode(parts[3])#.decode('utf-8')
+            #print parts[2].decode('utf-8'), parts[3].decode('utf-8'), "\n"
             stats_collector.collect(int(parts[1]), parts[3], parts[2])
             # mark page url
             all_data.append(stats_collector.get_features())
@@ -149,8 +160,8 @@ def cv_model():
     data = np.asarray(all_data, dtype = np.float)
     target = np.asarray(target, dtype = np.float)
 
-    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.07, n_estimators=400,\
-     min_samples_split=30, min_samples_leaf=1, max_depth=4)
+    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.05, n_estimators=400,\
+     min_samples_split=30, min_samples_leaf=15, max_depth=5)
 
     kf = KFold(data.shape[0], n_folds = 3, shuffle = True)
 
@@ -161,83 +172,27 @@ def cv_model():
         y_pred = clf.predict(X_test)
         print f1_score(y_test, y_pred)
 
-def check_naive_bayes():
-    global term_frequency
-    global document_frequency
-    global doc_count
-    DATA_FILE  = './data/train-set-ru-b64-utf-8.txt'
-    all_data = []
-    target = []
-
-    with open(DATA_FILE) as df:
-        for i, line in enumerate(df):
-            print i
-            line = line.strip()
-            parts = line.split()
-            stats_collector = StatsCollector()
-            stats_collector.collect(int(parts[1]), parts[3], parts[2])
-
-            all_data.append(stats_collector.get_features())
-            target.append(stats_collector.get_target())
-
-    data = np.asarray(all_data, dtype = np.float)
-    target = np.asarray(target, dtype = np.float)
-
-    document_frequency = np.log(doc_count / df)
-    term_frequency = np.asarray(tf, dtype = np.float)
-    document_frequency = np.asarray(df, dtype = np.float)
-    tf_df_matrix = np.dot(tf, df.T)
-
-    print tf_df_matrix.shape
-
 
 
 def is_spam(pageInb64, url):
     global features_list
     global clf
 
-    features_list = []
-    open_corpora_dict = []
-    with open('words') as f:
-        for num, line in enumerate(f):
-            if num == 500:
-                break
-            line = line.strip()
-            f, s = line.split(' ')
-            features_list.append(f)
-
     original = base64.b64decode(pageInb64)
     # check url  
     stats_collector = StatsCollector()
     stats_collector.collect(None, pageInb64, url)
     features = np.asarray(stats_collector.get_features(), dtype = np.float)
-    target = clf.predict(features.reshape(1, -1))
-    return target
+    target = clf.predict_proba(features.reshape(1, -1))
+    if (target[0][1] > 0.9):
+        return 1
+    else:
+        return 0
 
 
 def main():
     global features_list
-    global D
-    global term_frequency
-    global document_frequency
-    global doc_count
-    D = {}
-    features_list = []
 
-    with open('words') as f:
-        for num, line in enumerate(f):
-            if (num == 20000):
-                break
-            line = line.strip()
-            f, s = line.split(' ')
-            features_list.append(f)
-
-
-    document_frequency = np.zeros(len(features_list))
-    term_frequency = []
-    doc_count = 0
-    check_naive_bayes()
-    return 0
     fit_model()
     return 0
 
