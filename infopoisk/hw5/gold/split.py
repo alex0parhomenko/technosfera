@@ -6,13 +6,22 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.externals import joblib
 import numpy as np
 from sklearn.metrics import accuracy_score
+from sklearn.linear_model import LogisticRegression
 from sklearn.cross_validation import KFold
+import xgboost.sklearn as xgb
 
-def findOccurences(s, ch):
-    return [i for i, letter in enumerate(s) if letter == ch]
+def findOccurences(s, ch1, ch2, ch3):
+    return [i for i, letter in enumerate(s) if letter == ch1 or letter == ch2 or letter == ch3]
+
+def remove_spaces(s):
+    pos = 0
+    while s[pos] == ' ':
+        pos += 1
+    return s[pos:]
 
 class extract_features:
     def __init__(self):
+        self.end_type = []
         self.is_next_letter_up = []
         self.is_next_space = []
         self.len_prev_word = []
@@ -27,7 +36,7 @@ class extract_features:
 
     def collect_features(self, par, sen = None):
         par = par.strip()
-        ind_par = findOccurences(par, '.')
+        ind_par = findOccurences(par, '.', '?', '!')
         ind_true = []
         pos = 0
         if sen != None:
@@ -45,6 +54,13 @@ class extract_features:
 
         prev_ind = 0
         for ind in ind_par:
+            if par[ind] == '.':
+                self.end_type.append([0, 0, 1])
+            elif par[ind] == '!':
+                self.end_type.append([1, 0, 0])
+            elif par[ind] == '?':
+                self.end_type.append([0, 1, 0])
+
             if ind + 1 < len(par) and par[ind + 1].isupper():
                 self.is_next_letter_up.append(1)
             else:
@@ -104,15 +120,18 @@ class extract_features:
         return self.mark
 
     def get_features(self):
-        return np.asarray(self.pick_features(), dtype = np.float).T
+        end_type = np.asarray(self.end_type, dtype = np.int)
+        other_features = np.asarray(self.pick_features(), dtype = np.float).T
+        return np.concatenate((end_type, other_features), axis = 1)
             
         
 
 
 def fit_model(data, target):
-    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.05, n_estimators=250,\
-     subsample=1.0, min_samples_split=10, min_samples_leaf=5,\
-     max_depth=4)
+    clf = xgb.XGBClassifier(max_depth = 3, n_estimators = 150, learning_rate = 0.07, reg_alpha = 0.7, reg_lambda = 0.7)
+    #clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.05, n_estimators=250,\
+    # subsample=1.0, min_samples_split=10, min_samples_leaf=5,\
+    # max_depth=4)
     clf.fit(data, target)
     y_pred = clf.predict(data)
 
@@ -122,19 +141,25 @@ def fit_model(data, target):
 
 
 def cv_model(data, target):
-    clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.05, n_estimators=250,\
-      min_samples_split=10, min_samples_leaf=5,\
-     max_depth=4)
+    #clf = GradientBoostingClassifier(loss='deviance', learning_rate=0.05, n_estimators=250,\
+    #  min_samples_split=10, min_samples_leaf=5,\
+    # max_depth=4)
+    #clf = LogisticRegression(penalty='l1', tol=0.0001, C=1.0, fit_intercept=True, intercept_scaling=1, 
+    #    class_weight=None, random_state=None, solver='liblinear', max_iter=100, multi_class='ovr', verbose=0, warm_start=False)
+    clf = xgb.XGBClassifier(max_depth = 3, n_estimators = 150, learning_rate = 0.07, reg_alpha = 0.7, reg_lambda = 0.7)
+    s = 0
     kf = KFold(len(data), n_folds=3, shuffle = True)
     for train_index, test_index in kf:
         X_train, X_test = data[train_index], data[test_index]
         y_train, y_test = target[train_index], target[test_index]
         clf.fit(X_train, y_train)
         y_pred = clf.predict(X_test)
-        print accuracy_score(y_pred, y_test)
+        s+= accuracy_score(y_pred, y_test)
+    print s / 3.0
 
 
 def splitParagraph(para):
+    para = para.strip()
     clf = joblib.load('model/model.pkl')
     res = []
     st_col = extract_features()
@@ -145,13 +170,14 @@ def splitParagraph(para):
     prev = 0
     pos = -1
     for num, sym in enumerate(para):
-        if sym == '.':
+        if sym == '.' or sym == '!' or sym == '?':
             pos += 1
             if (pred[pos] == 1):
-                res.append(para[prev:num + 1])
+                s = para[prev:num + 1]
+                res.append(remove_spaces(s))
                 prev = num + 1
-    if not res:
-        res.append(para)
+    if not res or para[-1] != '.' and para[-1] != '!' and para[-1] != '?':
+        res.append(remove_spaces(para[prev:]))
 
     return {'Paragraph': para, 'Sentences': res}
 
@@ -162,6 +188,13 @@ def dump_to_file(file_name, gs):
             d = splitParagraph(gs[i]['Paragraph'])
             s = json.dumps(d, ensure_ascii=False).encode('utf8')
             f_out.write(s + "\n")
+    return 0
+
+def dump_out(arr_lines):
+    for i in range(len(arr_lines)):
+        d = splitParagraph(arr_lines[i].decode('utf8'))
+        s = json.dumps(d, ensure_ascii = False).encode('utf8')
+        sys.stdout.write(s + '\n')
     return 0
 
 def get_data(gs):
@@ -178,17 +211,21 @@ def get_data(gs):
             data = np.concatenate((data, st_col.get_features()), axis = 0)
     return np.asarray(data, dtype = np.float), np.asarray(target, dtype = np.float)
 
-
+def read_lines():
+    arr_lines = []
+    for line in sys.stdin:
+        arr_lines.append(line)
+    dump_out(arr_lines)
+    return 0 
 
 def main():
-    fg = open(sys.argv[1])
-    gs = [json.loads(s) for s in fg.readlines()]
-
-    data, target = get_data(gs)
+    #f = open(sys.argv[1])
+    #gs = [json.loads(s) for s in f]
+    read_lines()
+    #data, target = get_data(gs)
+    #print data.shape, target.shape
+    #print data[10:50, 0:3]
     #fit_model(data, target)
-    dump_to_file('broken_gold.json', gs)
-    #return 0
-            
     #cv_model(data, target)
     return 0 
 
